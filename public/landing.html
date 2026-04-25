@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ReplyKit — AI Google Review Responses for Small Businesses</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --accent:      #4f46e5;
+      --accent-dark: #4338ca;
+      --accent-soft: #eef2ff;
+      --green:       #10b981;
+      --green-soft:  #ecfdf5;
+      --text:        #111827;
+      --muted:       #6b7280;
+      --border:      #e5e7eb;
+      --surface:     #ffffff;
+      --bg:          #f9fafb;
+      --radius:      12px;
+    }
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.15rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: var(--accent);
+    }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .logo-icon svg { color: #fff; }
+
+    /* ── Hero ── */
+    .hero {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 5rem 2rem 3.5rem;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      padding: 5px 12px;
+      border-radius: 20px;
+      margin-bottom: 1.75rem;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.25rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.15;
+      margin-bottom: 1.25rem;
+    }
+    .hero h1 span { color: var(--accent); }
+    .hero p {
+      font-size: 1.1rem;
+      color: var(--muted);
+      line-height: 1.7;
+      max-width: 500px;
+      margin: 0 auto 2.5rem;
+    }
+    .hero-sub {
+      margin-top: 1rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 14px 28px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+      font-family: inherit;
+      box-shadow: 0 4px 14px rgba(79,70,229,0.28);
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-dark); box-shadow: 0 6px 20px rgba(79,70,229,0.38); }
+    .btn-primary:active:not(:disabled) { transform: scale(0.98); }
+    .btn-primary:disabled { opacity: 0.65; cursor: not-allowed; }
+
+    /* ── Features ── */
+    .features {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 2rem 4rem;
+    }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+    }
+    .feature-icon {
+      width: 42px; height: 42px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 1rem;
+      flex-shrink: 0;
+    }
+    .feature-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    .feature-desc {
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    /* ── Pricing ── */
+    .pricing {
+      max-width: 400px;
+      margin: 0 auto;
+      padding: 0 2rem 5rem;
+    }
+    .pricing-card {
+      background: var(--surface);
+      border: 2px solid var(--accent);
+      border-radius: 16px;
+      padding: 2.5rem 2rem;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(79,70,229,0.12);
+    }
+    .pricing-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 1rem;
+    }
+    .pricing-amount {
+      font-size: 3.75rem;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: var(--text);
+      line-height: 1;
+    }
+    .pricing-amount sup {
+      font-size: 1.5rem;
+      vertical-align: super;
+      font-weight: 700;
+    }
+    .pricing-period {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin: 0.5rem 0 2rem;
+    }
+    .pricing-features {
+      list-style: none;
+      margin-bottom: 2rem;
+      text-align: left;
+    }
+    .pricing-features li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .pricing-features li:last-child { border-bottom: none; }
+    .check {
+      width: 20px; height: 20px;
+      background: var(--green-soft);
+      color: var(--green);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      font-size: 0.65rem;
+      font-weight: 800;
+    }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: auto;
+      text-align: center;
+      padding: 1.5rem 2rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.8rem;
+      color: var(--muted);
+      background: var(--surface);
+    }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 680px) {
+      .features-grid { grid-template-columns: 1fr; }
+      .hero { padding-top: 3rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+    </div>
+    ReplyKit
+  </div>
+  <span style="font-size:0.8rem;color:var(--muted)">Powered by Claude AI</span>
+</header>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-badge">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+    </svg>
+    AI-Powered Review Responses
+  </div>
+  <h1>Turn every Google review<br>into a <span>lasting impression.</span></h1>
+  <p>Paste a review, pick a tone, get a polished response in seconds. No agencies, no templates — genuine replies that build trust.</p>
+  <button class="btn-primary" id="btn-hero" onclick="subscribe('btn-hero', 'Subscribe — $9/month')">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    </svg>
+    Subscribe — $9/month
+  </button>
+  <p class="hero-sub">Cancel anytime &nbsp;·&nbsp; Instant access after payment</p>
+</section>
+
+<!-- Features -->
+<section class="features">
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+      </div>
+      <div class="feature-title">Instant AI Responses</div>
+      <div class="feature-desc">Claude crafts thoughtful, specific replies in seconds — not generic templates, but responses that actually address what the reviewer said.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/>
+        </svg>
+      </div>
+      <div class="feature-title">Three Tones, One Click</div>
+      <div class="feature-desc">Professional, Friendly, or Apologetic — pick the right voice for each review, from a glowing 5-star to a tough 1-star.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      </div>
+      <div class="feature-title">Built for Small Businesses</div>
+      <div class="feature-desc">No marketing agency needed. ReplyKit helps you show up professionally online and turn reviewers into loyal customers.</div>
+    </div>
+  </div>
+</section>
+
+<!-- Pricing -->
+<section class="pricing">
+  <div class="pricing-card">
+    <div class="pricing-label">Simple Pricing</div>
+    <div class="pricing-amount"><sup>$</sup>9</div>
+    <div class="pricing-period">per month</div>
+    <ul class="pricing-features">
+      <li><span class="check">✓</span> Unlimited AI responses</li>
+      <li><span class="check">✓</span> Professional, Friendly & Apologetic tones</li>
+      <li><span class="check">✓</span> Real-time streaming output</li>
+      <li><span class="check">✓</span> One-click copy to clipboard</li>
+      <li><span class="check">✓</span> Cancel anytime</li>
+    </ul>
+    <button class="btn-primary" style="width:100%" id="btn-pricing" onclick="subscribe('btn-pricing', 'Get Started')">
+      Get Started
+    </button>
+  </div>
+</section>
+
+<footer>
+  &copy; 2026 ReplyKit &nbsp;·&nbsp; Powered by Claude AI
+</footer>
+
+<script>
+  async function subscribe(btnId, originalLabel) {
+    const btn = document.getElementById(btnId);
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner"></div> Redirecting to checkout…';
+
+    try {
+      const resp = await fetch('/api/create-checkout-session', { method: 'POST' });
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      window.location.href = data.url;
+    } catch (err) {
+      btn.disabled = false;
+      btn.innerHTML = originalHTML;
+      alert('Could not start checkout. Please try again.');
+    }
+  }
+</script>
+
+</body>
+</html>

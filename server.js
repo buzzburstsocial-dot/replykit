@@ -1,19 +1,30 @@
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
+import Stripe from 'stripe';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { createHmac, randomBytes } from 'crypto';
+import cookieParser from 'cookie-parser';
 
 dotenv.config();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
-app.use(express.json());
-app.use(express.static(join(__dirname, 'public')));
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Stable system prompt — cached on first request, reused on subsequent ones
+const COOKIE_SECRET = process.env.COOKIE_SECRET || (() => {
+  const s = randomBytes(32).toString('hex');
+  console.warn('\n  ⚠  COOKIE_SECRET not set — sessions will not survive restarts.\n');
+  return s;
+})();
+
+app.use(express.json());
+app.use(cookieParser());
+
+// ── System prompt (prompt-cached) ──────────────────────────────────────────
 const SYSTEM_PROMPT = `You are an expert reputation manager for local businesses. Your sole job is to write polished, thoughtful responses to Google reviews on behalf of business owners.
 
 Rules:
@@ -33,7 +44,80 @@ const TONE_GUIDE = {
   apologetic:   'Tone: Empathetic and contrite. Sincerely acknowledge any shortcoming, take clear ownership, and emphasize concrete steps to make it right.',
 };
 
-app.post('/api/generate', async (req, res) => {
+// ── Auth middleware ─────────────────────────────────────────────────────────
+function requireAuth(req, res, next) {
+  const token = req.cookies?.rk_session;
+  if (!token) return res.redirect('/');
+  try {
+    const dot = token.lastIndexOf('.');
+    if (dot === -1) throw new Error('malformed');
+    const data = token.slice(0, dot);
+    const sig  = token.slice(dot + 1);
+    const expected = createHmac('sha256', COOKIE_SECRET).update(data).digest('base64url');
+    if (sig !== expected) throw new Error('invalid signature');
+    const { exp } = JSON.parse(Buffer.from(data, 'base64url').toString());
+    if (Date.now() > exp) throw new Error('expired');
+    next();
+  } catch {
+    res.clearCookie('rk_session');
+    res.redirect('/');
+  }
+}
+
+// ── Pages ───────────────────────────────────────────────────────────────────
+app.get('/', (req, res) =>
+  res.sendFile(join(__dirname, 'public', 'landing.html'))
+);
+
+app.get('/app', requireAuth, (req, res) =>
+  res.sendFile(join(__dirname, 'public', 'app.html'))
+);
+
+// ── Stripe: create checkout session ─────────────────────────────────────────
+app.post('/api/create-checkout-session', async (req, res) => {
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+      success_url: `${req.protocol}://${req.get('host')}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url:  `${req.protocol}://${req.get('host')}/`,
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('Stripe checkout error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Stripe: post-payment redirect ────────────────────────────────────────────
+app.get('/success', async (req, res) => {
+  const { session_id } = req.query;
+  if (!session_id) return res.redirect('/');
+
+  try {
+    const session = await stripe.checkout.sessions.retrieve(session_id);
+    if (session.payment_status !== 'paid') return res.redirect('/');
+
+    const email = session.customer_details?.email || '';
+    const exp   = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
+    const data  = Buffer.from(JSON.stringify({ email, exp })).toString('base64url');
+    const sig   = createHmac('sha256', COOKIE_SECRET).update(data).digest('base64url');
+
+    res.cookie('rk_session', `${data}.${sig}`, {
+      httpOnly: true,
+      secure:   process.env.NODE_ENV === 'production',
+      maxAge:   30 * 24 * 60 * 60 * 1000,
+      sameSite: 'lax',
+    });
+    res.redirect('/app');
+  } catch (err) {
+    console.error('Stripe success handler error:', err);
+    res.redirect('/');
+  }
+});
+
+// ── Generate (protected) ─────────────────────────────────────────────────────
+app.post('/api/generate', requireAuth, async (req, res) => {
   const { review, tone, businessName } = req.body;
 
   if (!review?.trim()) {
@@ -43,7 +127,6 @@ app.post('/api/generate', async (req, res) => {
     return res.status(400).json({ error: 'Invalid tone. Choose professional, friendly, or apologetic.' });
   }
 
-  // Set up SSE
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -62,7 +145,7 @@ app.post('/api/generate', async (req, res) => {
         {
           type: 'text',
           text: SYSTEM_PROMPT,
-          cache_control: { type: 'ephemeral' }, // cached after first request
+          cache_control: { type: 'ephemeral' },
         },
       ],
       messages: [
