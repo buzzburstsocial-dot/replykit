@@ -349,6 +349,17 @@
       line-height: 1.6;
     }
 
+    /* ── Usage bar ── */
+    .usage-bar {
+      margin-top: 0.75rem;
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--muted);
+      min-height: 1.2em;
+    }
+    .usage-bar.warn  { color: #f59e0b; }
+    .usage-bar.empty { color: var(--red); font-weight: 600; }
+
     /* ── Responsive ── */
     @media (max-width: 680px) {
       main { grid-template-columns: 1fr; }
@@ -449,6 +460,8 @@
         Generate Response
       </button>
 
+      <div class="usage-bar" id="usage-bar"></div>
+
       <div class="tips">
         <div class="tips-title">💡 Tips for best results</div>
         <ul>
@@ -513,6 +526,30 @@
   let currentTone = 'professional';
   let starRating = 0;
   let isGenerating = false;
+
+  /* ── Usage ── */
+  async function loadUsage() {
+    try {
+      const resp = await fetch('/api/usage');
+      if (!resp.ok) return;
+      const { remaining, limit } = await resp.json();
+      updateUsageBar(remaining, limit);
+    } catch {}
+  }
+
+  function updateUsageBar(remaining, limit) {
+    const bar = document.getElementById('usage-bar');
+    const btn = document.getElementById('generate-btn');
+    if (remaining === null) { bar.textContent = ''; return; } // localhost — no limit
+    bar.textContent = `${remaining} / ${limit} generations left today`;
+    bar.className = 'usage-bar' + (remaining === 0 ? ' empty' : remaining <= 5 ? ' warn' : '');
+    if (remaining === 0) {
+      btn.disabled = true;
+      btn.title = 'Daily limit reached. Resets in 24 hours.';
+    }
+  }
+
+  loadUsage();
 
   /* ── Star rating ── */
   const stars = document.querySelectorAll('.star');
@@ -596,11 +633,14 @@
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           const payload = line.slice(6).trim();
-          if (payload === '[DONE]') break;
 
           let parsed;
           try { parsed = JSON.parse(payload); } catch { continue; }
 
+          if (parsed.done) {
+            updateUsageBar(parsed.remaining, parsed.limit);
+            break;
+          }
           if (parsed.error) {
             showError(parsed.error);
             return;

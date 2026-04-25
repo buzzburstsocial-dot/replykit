@@ -4,7 +4,7 @@ import Stripe from 'stripe';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { createHmac, randomBytes } from 'crypto';
+import { createHmac, createHash, randomBytes } from 'crypto';
 import cookieParser from 'cookie-parser';
 
 dotenv.config();
@@ -44,8 +44,34 @@ const TONE_GUIDE = {
   apologetic:   'Tone: Empathetic and contrite. Sincerely acknowledge any shortcoming, take clear ownership, and emphasize concrete steps to make it right.',
 };
 
+// ── Rate limiting ───────────────────────────────────────────────────────────
+const DAILY_LIMIT = 30;
+const rateLimitStore = new Map();
+
+function getRateLimitEntry(key) {
+  const now = Date.now();
+  let entry = rateLimitStore.get(key);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + 24 * 60 * 60 * 1000 };
+    rateLimitStore.set(key, entry);
+  }
+  return entry;
+}
+
 // ── Auth middleware ─────────────────────────────────────────────────────────
+function isLocalhostRequest(req) {
+  const ip = req.ip || req.connection.remoteAddress || '';
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
 function requireAuth(req, res, next) {
+  // Localhost bypass for local development
+  if (isLocalhostRequest(req)) {
+    req.isLocalhost = true;
+    req.sessionKey  = null;
+    return next();
+  }
+
   const token = req.cookies?.rk_session;
   if (!token) return res.redirect('/');
   try {
@@ -57,6 +83,9 @@ function requireAuth(req, res, next) {
     if (sig !== expected) throw new Error('invalid signature');
     const { exp } = JSON.parse(Buffer.from(data, 'base64url').toString());
     if (Date.now() > exp) throw new Error('expired');
+    // Use a short hash of the cookie data as the rate-limit key (avoids storing PII)
+    req.sessionKey  = createHash('sha256').update(data).digest('hex').slice(0, 16);
+    req.isLocalhost = false;
     next();
   } catch {
     res.clearCookie('rk_session');
@@ -99,7 +128,7 @@ app.get('/success', async (req, res) => {
     if (session.payment_status !== 'paid') return res.redirect('/');
 
     const email = session.customer_details?.email || '';
-    const exp   = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
+    const exp   = Date.now() + 30 * 24 * 60 * 60 * 1000;
     const data  = Buffer.from(JSON.stringify({ email, exp })).toString('base64url');
     const sig   = createHmac('sha256', COOKIE_SECRET).update(data).digest('base64url');
 
@@ -116,7 +145,14 @@ app.get('/success', async (req, res) => {
   }
 });
 
-// ── Generate (protected) ─────────────────────────────────────────────────────
+// ── Usage (remaining generations) ───────────────────────────────────────────
+app.get('/api/usage', requireAuth, (req, res) => {
+  if (req.isLocalhost) return res.json({ remaining: null, limit: DAILY_LIMIT });
+  const entry = getRateLimitEntry(req.sessionKey);
+  res.json({ remaining: Math.max(0, DAILY_LIMIT - entry.count), limit: DAILY_LIMIT });
+});
+
+// ── Generate (protected + rate-limited) ─────────────────────────────────────
 app.post('/api/generate', requireAuth, async (req, res) => {
   const { review, tone, businessName } = req.body;
 
@@ -125,6 +161,16 @@ app.post('/api/generate', requireAuth, async (req, res) => {
   }
   if (!TONE_GUIDE[tone]) {
     return res.status(400).json({ error: 'Invalid tone. Choose professional, friendly, or apologetic.' });
+  }
+
+  // Rate limit check (skipped for localhost)
+  let entry = null;
+  if (!req.isLocalhost) {
+    entry = getRateLimitEntry(req.sessionKey);
+    if (entry.count >= DAILY_LIMIT) {
+      return res.status(429).json({ error: `Daily limit of ${DAILY_LIMIT} generations reached. Resets in 24 hours.` });
+    }
+    entry.count++;
   }
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -165,10 +211,13 @@ app.post('/api/generate', requireAuth, async (req, res) => {
       }
     }
 
-    res.write('data: [DONE]\n\n');
+    const remaining = req.isLocalhost ? null : Math.max(0, DAILY_LIMIT - entry.count);
+    res.write(`data: ${JSON.stringify({ done: true, remaining, limit: DAILY_LIMIT })}\n\n`);
     res.end();
   } catch (err) {
     console.error('Anthropic API error:', err);
+    // Roll back count on API error so failed requests don't consume quota
+    if (entry) entry.count = Math.max(0, entry.count - 1);
     const message = err?.status === 401
       ? 'Invalid API key. Check your ANTHROPIC_API_KEY in .env.'
       : err?.message || 'Something went wrong. Please try again.';
