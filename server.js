@@ -146,6 +146,22 @@ app.get('/success', async (req, res) => {
   }
 });
 
+// ── Admin bypass ────────────────────────────────────────────────────────────
+app.get('/admin', (req, res) => {
+  const key = process.env.ADMIN_SECRET_KEY;
+  if (!key || req.query.key !== key) return res.status(403).send('Forbidden');
+  const exp  = Date.now() + 365 * 24 * 60 * 60 * 1000;
+  const data = Buffer.from(JSON.stringify({ email: 'admin', exp })).toString('base64url');
+  const sig  = createHmac('sha256', COOKIE_SECRET).update(data).digest('base64url');
+  res.cookie('rk_session', `${data}.${sig}`, {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    maxAge:   365 * 24 * 60 * 60 * 1000,
+    sameSite: 'lax',
+  });
+  res.redirect('/app');
+});
+
 // ── Usage (remaining generations) ───────────────────────────────────────────
 app.get('/api/usage', requireAuth, (req, res) => {
   if (req.isLocalhost) return res.json({ remaining: null, limit: DAILY_LIMIT });
